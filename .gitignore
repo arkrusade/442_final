@@ -1,0 +1,6 @@
+*.swp
+*.pdf
+*.vim
+*.zip
+*.alz
+*__pycache__*
