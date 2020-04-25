@@ -4,3 +4,6 @@
 *.zip
 *.alz
 *__pycache__*
+env/
+cropped/
+data/

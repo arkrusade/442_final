@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm  # Displays a progress bar
+from tqdm import tqdm
 
 import torch
 from torch import nn
@@ -13,13 +13,15 @@ from torch.utils.data import Dataset, Subset, DataLoader, random_split
 
 N = 43  # 43 classes in GTSRB
 
+def dims(xy, padding, kernel, stride):
+    return np.floor((xy + 2 * padding - kernel) / stride).astype(int) + 1
 
 class Network(nn.Module):
     def __init__(self):
         super().__init__()
 
         # in_channels, out_channesl, kernel_size, stride, padding
-        xy1 = 3
+        xy1 = 28
 
         i1 = 1
 
@@ -56,6 +58,7 @@ class Network(nn.Module):
 
     def forward(self, x):
         relu = nn.ReLU()
+        x = x.reshape(x.shape[0], 1, x.shape[1], x.shape[2])
         x = self.conv1(x)
         x = relu(x)
         x = self.conv2(x)
@@ -66,6 +69,8 @@ class Network(nn.Module):
         x = relu(x)
         x = self.dropfc(x)
         x = self.fc2(x)
-        x = nn.Softmax(x)
+        # x = nn.Softmax(x)
         return x
+
+
 
