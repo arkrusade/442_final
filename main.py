@@ -1,45 +1,103 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import random
 from tqdm import tqdm
 
 import torch
 from torch import nn
 from torch import optim
 from torchvision import datasets, transforms
-import csv
-
-from torchvision import datasets, transforms
-from torch.autograd import Variable
+from torch.utils.data import Dataset, Subset, DataLoader, random_split
 
 from data import initialize_data, data_transforms
 from model import Network
 
+from bisect import bisect
 
-# function for reading the images
-# arguments: path to the traffic sign data, for example './GTSRB/Training'
-# returns: list of images, list of corresponding labels
-def readTrafficSigns(rootpath):
-    '''Reads traffic sign data for German Traffic Sign Recognition Benchmark.
 
-    Arguments: path to the traffic sign data, for example './GTSRB/Training'
-    Returns:   list of images, list of corresponding labels'''
-    images = [] # images
-    labels = [] # corresponding labels
-    # loop over all 42 classes
-    for c in range(0, 43):
-        # subdirectory for class
-        prefix = rootpath + '/' + format(c, '05d') + '/'
-        filepath = prefix + 'GT-'+ format(c, '05d') + '.csv'
-        gtFile = open(filepath)  # annotations file
-        gtReader = csv.reader(gtFile, delimiter=';')  # csv parser for annotations file
-        next(gtReader)  # skip header
-        # loop over all images in current annotations file
-        for row in gtReader:
-            images.append(plt.imread(prefix + row[0]))  # the 1th column is the filename
-            labels.append(row[7])  # the 8th column is the label
-        gtFile.close()
-        print("finished loading class {}".format(c))
-    return images, labels
+class FileManager():
+    def __init__(self, data_dir, npy_dir):
+        self.data_dir = data_dir
+        self.npy_dir = npy_dir
+        bound_path = os.path.join(npy_dir, 'header.npy')
+        if not os.path.exists(bound_path):
+            bounds = []
+            count = 0
+            for root, dirs, files in os.walk(npy_dir):
+                for f in files:
+                    path = os.path.join(root, f)
+                    data = np.load(path)
+                    count = count + data.shape[0]
+                    bounds.append(count)
+                    print("loaded {}".format(path))
+
+            np.save(bound_path, bounds)
+
+        self.bounds = np.load(bound_path)
+        self.bounds.sort()
+        self.size = self.bounds[len(self.bounds) - 1]
+        self.active_files = {}
+        self.queue = []
+        self.max_files = 300
+
+    def get_file(self, findex):
+        if findex in self.active_files:
+            return self.active_files[findex]
+        return self.activate_file(findex)
+
+    def activate_file(self, findex):
+        data_path = self.npy_dir + '/phd08_data_' + str(findex) + '.npy'
+        label_path = self.npy_dir + '/phd08_labels_' + str(findex) + '.npy'
+        data_file = np.load(data_path)
+        label_file = np.load(label_path)
+        tup = (data_file, label_file)
+        self.active_files[findex] = tup
+        self.queue.append(findex)
+        if len(self.active_files) > self.max_files:
+            dindex = self.queue.pop(0)
+            del self.active_files[dindex]
+        return tup
+
+    def get(self, idx):
+        assert(idx < self.size)
+        findex = bisect(self.bounds, idx)
+        data_file, label_file = self.get_file(findex)
+        if findex == 0:
+            return (data_file[idx], label_file[idx])
+
+        fidx = idx - self.bounds[findex]
+
+        return (data_file[fidx], label_file[fidx])
+
+
+fm = FileManager("phd08", "phd08_npy_results")
+# fm.get(4374)
+
+
+class PHD_Dataset(Dataset):
+    def __init__(self, fm):
+        self.fm = fm
+        self.mapping = range(fm.size)
+        random.seed(442)
+        random.shuffle(self.mapping)
+
+    def __len__(self):
+        return self.fm.size
+
+    def __getitem__(self, idx):
+        return self.fm.get(self.mapping[idx])
+
+
+allset = PHD_Dataset(fm)
+trainset = Subset(allset, range(0, 500000))
+valset = Subset(allset, range(500000, 600000))
+testset = Subset(allset, range(600000, 700000))
+
+train_loader = DataLoader(trainset, batch_size=64, shuffle=True)
+val_loader = DataLoader(valset, batch_size=64, shuffle=False)
+# testloader = DataLoader(testset, batch_size=64, shuffle=True)
+
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"  # Configure device
@@ -101,18 +159,6 @@ def vis():
 
 
 def main():
-    rootdir = "."
-    batch_size = 64
-    initialize_data(rootdir) # extracts the zip files, makes a validation set
-
-    train_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(rootdir + '/train_images',
-                            transform=data_transforms),
-        batch_size=batch_size, shuffle=True, num_workers=1)
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(rootdir + '/val_images',
-                            transform=data_transforms),
-        batch_size=batch_size, shuffle=False, num_workers=1)
 
     train(model, train_loader, val_loader, num_epoch)
 
@@ -120,9 +166,6 @@ def main():
 
     torch.save(model.state_dict(), "model.pth")
     import pdb; pdb.set_trace()  # XXX BREAKPOINT
-    # path = "GTSRB_Final_Test_Images/GTSRB/Final_Test/Images"
-    path = './GTSRB_Final_Training_Images/GTSRB/Final_Training/Images/'
-    images, labels = readTrafficSigns(path)
 
 
 if __name__ == '__main__':

@@ -7,3 +7,8 @@
 env/
 cropped/
 data/
+phd08/
+phd08_input_samples/
+phd08_npy_results/
+phd08_png_results/
+~$D08 Dataset.docx
